@@ -22,28 +22,58 @@ def run(carry_returns, carry_signal,
         momentum_returns, momentum_weights,
         mr_returns, mr_signal):
 
-    returns = pd.read_csv(RETURNS_CSV, index_col=0, parse_dates=True)
-
-    tc  = SIGNAL_PARAMS["transaction_cost_bps"]   # 0.0002
-    slip = SIGNAL_PARAMS["slippage_bps"]           # 0.0001
+    tc  = SIGNAL_PARAMS["transaction_cost_bps"]
+    slip = SIGNAL_PARAMS["slippage_bps"]
 
     # ------------------------------------------------------------------
-    # 1. Align signals to a common index and blend equally
+    # 1. Align signals to a common index
     # ------------------------------------------------------------------
-    # Normalise momentum weights to signal-space [-1, 1] via sign; carry & MR are already {-1, 0, 1}
-    # For blending we use the raw weight/signal value from each layer
     common_idx = carry_signal.index \
         .intersection(momentum_weights.index) \
         .intersection(mr_signal.index)
 
     c_sig  = carry_signal.reindex(common_idx)
-    m_sig  = momentum_weights.reindex(common_idx)   # already dollar-neutral weights summing to ±1 per side
+    m_sig  = momentum_weights.reindex(common_idx)
     mr_sig = mr_signal.reindex(common_idx)
 
-    # Normalise momentum weights to [-1, 1] range per pair before averaging
     m_sig_norm = m_sig.clip(-1, 1)
 
-    blended = (c_sig + m_sig_norm + mr_sig) / 3.0
+    aligned_returns_for_vol = pd.read_csv(RETURNS_CSV, index_col=0, parse_dates=True) \
+        .reindex(common_idx).ffill()
+
+    # ------------------------------------------------------------------
+    # 1b. Vol-parity blending: weight each signal inversely by its vol
+    #     so every signal contributes equal risk to the portfolio
+    # ------------------------------------------------------------------
+    vol_window = 63
+
+    c_port  = (c_sig  * aligned_returns_for_vol).mean(axis=1)
+    m_port  = (m_sig_norm * aligned_returns_for_vol).mean(axis=1)
+    mr_port = (mr_sig * aligned_returns_for_vol).mean(axis=1)
+
+    c_vol  = c_port.rolling(vol_window).std().fillna(c_port.std()).clip(lower=1e-8)
+    m_vol  = m_port.rolling(vol_window).std().fillna(m_port.std()).clip(lower=1e-8)
+    mr_vol = mr_port.rolling(vol_window).std().fillna(mr_port.std()).clip(lower=1e-8)
+
+    inv_c  = 1.0 / c_vol
+    inv_m  = 1.0 / m_vol
+    inv_mr = 1.0 / mr_vol
+    total_inv = inv_c + inv_m + inv_mr
+
+    w_c  = inv_c  / total_inv
+    w_m  = inv_m  / total_inv
+    w_mr = inv_mr / total_inv
+
+    print(f"\n  Vol-parity blend weights (averages over full history):")
+    print(f"    Carry         : {w_c.mean()*100:.1f}%  (raw vol {c_vol.mean()*100:.3f}%)")
+    print(f"    Momentum      : {w_m.mean()*100:.1f}%  (raw vol {m_vol.mean()*100:.3f}%)")
+    print(f"    Mean-Reversion: {w_mr.mean()*100:.1f}%  (raw vol {mr_vol.mean()*100:.3f}%)")
+
+    blended = (
+        c_sig.multiply(w_c, axis=0)
+        + m_sig_norm.multiply(w_m, axis=0)
+        + mr_sig.multiply(w_mr, axis=0)
+    )
 
     # ------------------------------------------------------------------
     # 2. Transaction costs and slippage
@@ -53,7 +83,7 @@ def run(carry_returns, carry_signal,
     curr_sign = np.sign(blended)
     trade_mask = (prev_sign != curr_sign)   # True on days a trade fires
 
-    aligned_returns = returns.reindex(common_idx).ffill()
+    aligned_returns = aligned_returns_for_vol
 
     # Raw blended returns (signal × return, averaged across pairs)
     raw_pair_returns = blended * aligned_returns

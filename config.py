@@ -29,7 +29,7 @@ FRED_USD = "FEDFUNDS"
 FRED_FOREIGN = {
     "EUR": {"series": "ECBDFR",             "fallback": 0.0},
     "GBP": {"series": "IUDSOIA",            "fallback": 0.5},
-    "AUD": {"series": "AUCBCR",             "fallback": 1.5},
+    "AUD": {"series": "IRSTCI01AUM156N",     "fallback": 1.5},
     "JPY": {"series": "IRSTCI01JPM156N",    "fallback": -0.1},
     "CAD": {"series": "IRSTCI01CAM156N",    "fallback": 1.0},
 }
@@ -40,19 +40,38 @@ DATA_END   = None           # None = today
 
 # --- Signal Parameters ---
 SIGNAL_PARAMS = {
-    "carry_threshold":      0.001,   # 10 bps dead-band for carry signal
-    "momentum_window":      231,     # 12 months - 1 month = 252 - 21 trading days
-    "momentum_skip":        21,      # skip most recent month to avoid reversal
-    "momentum_long_n":      2,       # number of pairs to go long
-    "momentum_short_n":     2,       # number of pairs to go short
-    "z_window":             60,      # days for rolling mean/std in mean-reversion
-    "z_entry":              1.5,     # z-score threshold to enter a trade
-    "z_exit":               0.5,     # z-score threshold considered "near zero"
-    "stop_loss_days":       10,      # max holding period without reversion
-    "kelly_window":         63,      # days for rolling Kelly estimation
-    "kelly_cap":            0.25,    # maximum Kelly fraction
-    "transaction_cost_bps": 0.0002,  # 2 bps round-trip cost per trade
-    "slippage_bps":         0.0001,  # 1 bp adverse slippage per trade
+    # Carry
+    "carry_threshold":       0.005,   # 50 bps dead-band (was 10 bps — widens filter)
+    "vix_risk_off":          20.0,    # go flat on carry when VIX exceeds this level
+
+    # Momentum
+    "momentum_window":       231,
+    "momentum_skip":         21,
+    "momentum_long_n":       2,
+    "momentum_short_n":      2,
+    "momentum_min_spread":   0.03,    # min cross-pair score spread to trade (3%)
+
+    # Mean-reversion
+    "z_window":              60,
+    "z_entry":               1.5,
+    "z_exit":                0.5,
+    "stop_loss_days":        10,
+
+    # Position sizing — volatility targeting
+    "vol_target_daily":      0.005,   # 0.5% daily vol target (~8% annualised)
+    "vol_scale_cap":         2.0,     # maximum scale factor
+    "vol_regime_window":     21,      # short window for current vol
+    "vol_regime_ref_window": 126,     # reference window (~6 months)
+    "vol_regime_threshold":  1.5,     # scale down when current/ref vol ratio > this
+    "corr_window":           63,      # window for pairwise correlation
+
+    # Legacy (kept so old code that references these doesn't break)
+    "kelly_window":          63,
+    "kelly_cap":             0.25,
+
+    # Costs
+    "transaction_cost_bps":  0.0002,
+    "slippage_bps":          0.0001,
 }
 
 # --- Output Paths ---
@@ -60,6 +79,7 @@ OUTPUT_DIR        = "outputs"
 PRICES_CSV        = f"{OUTPUT_DIR}/prices.csv"
 RETURNS_CSV       = f"{OUTPUT_DIR}/returns.csv"
 RATE_DIFF_CSV     = f"{OUTPUT_DIR}/rate_differentials.csv"
+VIX_CSV           = f"{OUTPUT_DIR}/vix.csv"
 TEARSHEET_PDF     = f"{OUTPUT_DIR}/tearsheet.pdf"
 
 

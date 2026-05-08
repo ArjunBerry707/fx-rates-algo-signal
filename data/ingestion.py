@@ -15,7 +15,7 @@ from config import (
     PAIRS, PAIR_LABELS, PAIR_FOREIGN_CCY,
     FRED_USD, FRED_FOREIGN,
     DATA_START, DATA_END,
-    OUTPUT_DIR, PRICES_CSV, RETURNS_CSV, RATE_DIFF_CSV,
+    OUTPUT_DIR, PRICES_CSV, RETURNS_CSV, RATE_DIFF_CSV, VIX_CSV,
 )
 
 
@@ -38,6 +38,20 @@ def run():
     prices.columns = [PAIR_LABELS[c] for c in prices.columns]
     prices.index = pd.to_datetime(prices.index)
     prices = prices.sort_index()
+
+    # ------------------------------------------------------------------
+    # 1b. Pull VIX (fear gauge for carry regime filter)
+    # ------------------------------------------------------------------
+    print("Fetching VIX from yfinance...")
+    vix_raw = yf.download("^VIX", start=DATA_START, end=DATA_END, auto_adjust=True, progress=False)
+    if isinstance(vix_raw.columns, pd.MultiIndex):
+        vix = vix_raw["Close"].iloc[:, 0]
+    else:
+        vix = vix_raw["Close"]
+    vix.index = pd.to_datetime(vix.index)
+    vix = vix.reindex(prices.index).ffill()
+    vix.to_csv(VIX_CSV)
+    print(f"Saved: {VIX_CSV}")
 
     # ------------------------------------------------------------------
     # 2. Pull interest rates from FRED

@@ -23,10 +23,11 @@ def run(carry_returns=None):
     prices  = pd.read_csv(PRICES_CSV,  index_col=0, parse_dates=True)
     returns = pd.read_csv(RETURNS_CSV, index_col=0, parse_dates=True)
 
-    window    = SIGNAL_PARAMS["momentum_window"]  # 231 trading days
-    skip      = SIGNAL_PARAMS["momentum_skip"]    # 21 trading days
-    long_n    = SIGNAL_PARAMS["momentum_long_n"]
-    short_n   = SIGNAL_PARAMS["momentum_short_n"]
+    window     = SIGNAL_PARAMS["momentum_window"]
+    skip       = SIGNAL_PARAMS["momentum_skip"]
+    long_n     = SIGNAL_PARAMS["momentum_long_n"]
+    short_n    = SIGNAL_PARAMS["momentum_short_n"]
+    min_spread = SIGNAL_PARAMS["momentum_min_spread"]
 
     # ------------------------------------------------------------------
     # 1. 12-1 month momentum score for each pair
@@ -56,6 +57,14 @@ def run(carry_returns=None):
 
     # 4. Lag weights by 1 day
     weights_lagged = weights.shift(1)
+
+    # 4b. Spread filter: only trade when top and bottom pairs are meaningfully separated
+    spread = momentum_score.max(axis=1) - momentum_score.min(axis=1)
+    spread_ok = spread.shift(1).reindex(weights_lagged.index).ffill() > min_spread
+    weights_lagged[~spread_ok] = 0.0
+    n_filtered = int((~spread_ok).sum())
+    pct = n_filtered / len(weights_lagged) * 100
+    print(f"  Momentum spread filter: {n_filtered} days flat ({pct:.1f}% of history, spread < {min_spread*100:.0f}%)")
 
     # 5. Portfolio returns
     aligned_returns = returns.reindex(weights_lagged.index).ffill()

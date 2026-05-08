@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
-    SIGNAL_PARAMS, RETURNS_CSV, RATE_DIFF_CSV, OUTPUT_DIR,
+    SIGNAL_PARAMS, RETURNS_CSV, RATE_DIFF_CSV, VIX_CSV, OUTPUT_DIR,
     compute_max_drawdown, compute_sharpe,
     compute_annualised_return, compute_annualised_vol,
 )
@@ -32,6 +32,18 @@ def run():
 
     # 2. Lag by 1 day (no look-ahead bias)
     signal_lagged = signal.shift(1)
+
+    # 2b. VIX regime filter: go flat when market is in risk-off mode
+    vix_threshold = SIGNAL_PARAMS["vix_risk_off"]
+    try:
+        vix = pd.read_csv(VIX_CSV, index_col=0, parse_dates=True).squeeze()
+        risk_off = vix.reindex(signal_lagged.index).ffill() > vix_threshold
+        signal_lagged[risk_off] = 0
+        n_filtered = int(risk_off.sum())
+        pct = n_filtered / len(signal_lagged) * 100
+        print(f"  VIX regime filter: {n_filtered} days flat ({pct:.1f}% of history, VIX > {vix_threshold})")
+    except FileNotFoundError:
+        print("  WARNING: VIX data not found — run data ingestion first to enable regime filter")
 
     # 3. Strategy returns
     aligned_returns = returns.reindex(signal_lagged.index).ffill()
